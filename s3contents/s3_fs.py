@@ -81,7 +81,9 @@ class S3FS(GenericFS):
         if self.sse:
             s3_additional_kwargs["ServerSideEncryption"] = self.sse
         if self.kms_key_id:
-            s3_additional_kwargs["SSEKMSKeyId"]= self.kms_key_id
+            s3_additional_kwargs["SSEKMSKeyId"] = self.kms_key_id
+
+        s3_additional_kwargs["ACL"] = "bucket-owner-full-control"
 
         self.fs = s3fs.S3FileSystem(key=self.access_key_id,
                                     secret=self.secret_access_key,
