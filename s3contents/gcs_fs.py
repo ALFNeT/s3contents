@@ -111,13 +111,13 @@ class GCSFS(GenericFS):
         self.log.debug("S3contents.GCSFS: Making dir (touch): `%s`", path_)
         self.fs.touch(path_)
 
-    def read(self, path):
+    def read(self, path, format):
         path_ = self.path(path)
         if not self.isfile(path):
             raise NoSuchFile(path_)
         with self.fs.open(path_, mode='rb') as f:
             content = f.read().decode("utf-8")
-        return content
+        return content, 'text'
 
     def lstat(self, path):
         path_ = self.path(path)

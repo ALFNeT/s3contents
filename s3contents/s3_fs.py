@@ -118,36 +118,16 @@ class S3FS(GenericFS):
 
     def isfile(self, path):
         path_ = self.path(path)
-        is_file = False
-
-        exists = self.fs.exists(path_)
-        if not exists:
-            is_file = False
-        else:
-            try:
-                # Info will fail if path is a dir
-                self.fs.info(path_, refresh=True)
-                is_file = True
-            except FileNotFoundError:
-                pass
+        # FileNotFoundError handled by s3fs
+        is_file = self.fs.isfile(path_)
 
         self.log.debug("S3contents.S3FS: `%s` is a file: %s", path_, is_file)
         return is_file
 
     def isdir(self, path):
         path_ = self.path(path)
-        is_dir = False
-
-        exists = self.fs.exists(path_)
-        if not exists:
-            is_dir = False
-        else:
-            try:
-                # Info will fail if path is a dir
-                self.fs.info(path_, refresh=True)
-                is_dir = False
-            except FileNotFoundError:
-                is_dir = True
+        # FileNotFoundError handled by s3fs
+        is_dir = self.fs.isdir(path_)
 
         self.log.debug("S3contents.S3FS: `%s` is a directory: %s", path_, is_dir)
         return is_dir
@@ -167,6 +147,7 @@ class S3FS(GenericFS):
                 old_item_path = obj
                 new_item_path = old_item_path.replace(old_dir_path, new_dir_path, 1)
                 self.cp(old_item_path, new_item_path)
+            self.mkdir(new_path)  # Touch with dir_keep_file
         elif self.isfile(old_path):
             self.fs.copy(old_path_, new_path_)
 
@@ -186,17 +167,33 @@ class S3FS(GenericFS):
         self.log.debug("S3contents.S3FS: Making dir: `%s`", path_)
         self.fs.touch(path_)
 
-    def read(self, path):
+    def read(self, path, format):
         path_ = self.path(path)
         if not self.isfile(path):
             raise NoSuchFile(path_)
         with self.fs.open(path_, mode='rb') as f:
-            content = f.read().decode("utf-8")
-        return content
+            content = f.read()
+        if format is None or format == 'text':
+            # Try to interpret as unicode if format is unknown or if unicode
+            # was explicitly requested.
+            try:
+                return content.decode("utf-8"), 'text'
+            except UnicodeError:
+                if format == 'text':
+                    err = "{} is not UTF-8 encoded".format(path_)
+                    self.log.error(err)
+                    raise HTTPError(400, err, reason='bad format')
+        return base64.b64encode(content).decode("ascii"), 'base64'
 
     def lstat(self, path):
         path_ = self.path(path)
-        info = self.fs.info(path_, refresh=True)
+        if self.fs.isdir(path_):  # Try to get status of the dir_keep_file
+            path_ = self.path(path, self.dir_keep_file)
+        try:
+            self.fs.invalidate_cache(path_)
+            info = self.fs.info(path_)
+        except FileNotFoundError:
+            return {"ST_MTIME": None}
         ret = {}
         ret["ST_MTIME"] = info["LastModified"]
         return ret
